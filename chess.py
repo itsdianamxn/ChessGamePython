@@ -5,7 +5,7 @@ import sys
 from PIL import Image, ImageTk
 
 tile_size = 50
-
+border_width = 20
 # Load images into a dictionary for easier access
 image_paths = {
     "black_queen": "./Images/black_queen.png",
@@ -60,7 +60,7 @@ class ChessGame:
         return board
 
     def create_gui(self):
-        self.canvas = tk.Canvas(self.root, width=8 * tile_size, height=8 * tile_size)
+        self.canvas = tk.Canvas(self.root, width=8 * tile_size + 2*border_width, height=8 * tile_size + 2*border_width)
         self.canvas.pack()
         self.draw_board()
         self.canvas.bind("<Button-1>", self.on_click)
@@ -70,7 +70,7 @@ class ChessGame:
         for row in range(8):
             for col in range(8):
                 color = "white" if (row + col) % 2 == 0 else "gray"
-                x1, y1 = col * tile_size, row * tile_size
+                x1, y1 = col * tile_size + border_width, row * tile_size + border_width
                 x2, y2 = x1 + tile_size, y1 + tile_size
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=color)
 
@@ -81,26 +81,32 @@ class ChessGame:
                         self.canvas.create_image(
                             x1 + tile_size // 2,
                             y1 + tile_size // 2,
-                            image=piece_image
-                        )
+                            image=piece_image)
+
         if self.selected_piece is not None:
             row, col = self.selected_piece
-            x1, y1 = col * tile_size+2, row * tile_size+2
+            x1, y1 = col * tile_size+2 + border_width, row * tile_size+2 + border_width
             x2, y2 = x1 + tile_size-3, y1 + tile_size-3
             self.canvas.create_rectangle(x1, y1, x2, y2, outline="blue", width=2)
             for move in self.valid_moves:
-                x1, y1 = move[1] * tile_size+2, move[0] * tile_size+2
+                x1, y1 = move[1] * tile_size+2 + border_width, move[0] * tile_size+2 + border_width
                 x2, y2 = x1 + tile_size-3, y1 + tile_size-3
                 if self.board[move[0]][move[1]]:
                     self.canvas.create_rectangle(x1, y1, x2, y2, outline="red", width=2)
                 else:
                     self.canvas.create_rectangle(x1, y1, x2, y2, outline="green", width=2)
-
+        for i in range(8):
+            self.canvas.create_text(border_width + tile_size // 2 + i * tile_size, border_width // 2, text=chr(ord('A')+i))
+            self.canvas.create_text(border_width // 2, border_width + tile_size // 2 + i * tile_size, text=8-i)
+            self.canvas.create_text(border_width + tile_size // 2 + i * tile_size, tile_size * 8 + 3 * border_width // 2, text=chr(ord('A')+i))
+            self.canvas.create_text(tile_size * 8 + 3 * border_width // 2, border_width + tile_size // 2 + i * tile_size, text=8-i)
     def on_click(self, event):
         if self.current_player == "black" and self.black_player == "computer":
             return
 
-        row, col = event.y // tile_size, event.x // tile_size
+        row, col = (event.y - border_width) // tile_size, (event.x - border_width) // tile_size
+        if row < 0 or row >= 8 or col < 0 or col >= 8:
+            return
         print(f"{self.current_player} clicked on {row}, {col}: {self.board[row][col]}")
 
         if self.selected_piece is None:  # First click
@@ -163,8 +169,11 @@ class ChessGame:
             self.root.quit()
 
     def computer_move(self):
-        all_moves = self.get_all_moves("black")
-        move = random.choice(all_moves)
+        all_my_moves = self.get_all_moves(self.current_player)
+        for move in all_my_moves.copy():
+            if not self.is_safe_move(move[0], move[1], move[2], move[3]):
+                all_my_moves.remove(move)
+        move = random.choice(all_my_moves)
         self.make_move(move[0], move[1], move[2], move[3])
 
     def get_all_moves(self, color):
