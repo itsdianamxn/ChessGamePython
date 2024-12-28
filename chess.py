@@ -31,6 +31,16 @@ class ChessGame:
         self.selected_piece = None
         self.valid_moves = []
         self.images = {key: ImageTk.PhotoImage(Image.open(path).resize((tile_size, tile_size), Image.Resampling.BILINEAR)) for key, path in image_paths.items()}
+
+        self.white_king_moved = False
+        self.white_right_rook_moved = False
+        self.white_left_rook_moved = False
+
+        self.black_king_moved = False
+        self.black_right_rook_moved = False
+        self.black_left_rook_moved = False
+
+        self.allow_recursion = True
         self.create_gui()
 
     def initialize_board(self):
@@ -104,7 +114,11 @@ class ChessGame:
             self.draw_board()
         else:  # Second click: do the move
             from_row, from_col = self.selected_piece
-            if not self.is_valid_move(from_row, from_col, row, col):
+            if (row, col) not in self.valid_moves:
+                if self.board[row][col] and self.get_color(row, col) == self.current_player:
+                    self.selected_piece = (row, col)
+                    self.valid_moves = self.get_valid_moves(row, col)
+                    self.draw_board()
                 return
             self.make_move(from_row, from_col, row, col)
 
@@ -112,6 +126,33 @@ class ChessGame:
                 self.root.after(1, self.computer_move)
 
     def make_move(self, from_row, from_col, to_row, to_col):
+        if self.board[from_row][from_col] == "white_king":
+            self.white_king_moved = True
+            if to_col == 2 and from_col == 4:
+                self.board[7][3] = "white_rook"
+                self.board[7][0] = None
+            elif to_col == 6 and from_col == 4:
+                self.board[7][5] = "white_rook"
+                self.board[7][7] = None
+        elif self.board[from_row][from_col] == "white_rook":
+            if from_col == 0:
+                self.white_left_rook_moved = True
+            elif from_col == 7:
+                self.white_right_rook_moved = True
+        elif self.board[from_row][from_col] == "black_king":
+            self.black_king_moved = True
+            if to_col == 2 and from_col == 4:
+                self.board[0][3] = "black_rook"
+                self.board[0][0] = None
+            elif to_col == 6 and from_col == 4:
+                self.board[0][5] = "black_rook"
+                self.board[0][7] = None
+        elif self.board[from_row][from_col] == "black_rook":
+            if from_col == 0:
+                self.black_left_rook_moved = True
+            elif from_col == 7:
+                self.black_right_rook_moved = True
+
         self.board[to_row][to_col] = self.board[from_row][from_col]
         self.board[from_row][from_col] = None
         self.current_player = "black" if self.current_player == "white" else "white"
@@ -119,54 +160,64 @@ class ChessGame:
         self.draw_board()
 
         if self.check_game_over():
-            winner = "White" if self.current_player == "black" else "Black"
-            messagebox.showinfo("Game Over", f"{winner} wins!")
             self.root.quit()
 
     def computer_move(self):
-        all_moves = []
-        for row in range(8):
-            for col in range(8):
-                if (self.get_color(row, col) == "black"):
-                    moves = self.get_valid_moves(row, col)
-                    for move in moves:
-                        all_moves.append((row, col, move[0], move[1]))
+        all_moves = self.get_all_moves("black")
         move = random.choice(all_moves)
         self.make_move(move[0], move[1], move[2], move[3])
 
-    def check_game_over(self):
-        # Simple game-over logic: check if kings are present
-        white_king = any("white_king" in row for row in self.board)
-        black_king = any("black_king" in row for row in self.board)
-        return not (white_king and black_king)
+    def get_all_moves(self, color):
+        all_moves = []
+        if not self.allow_recursion:
+            return all_moves
+        self.allow_recursion = False
+        for row in range(8):
+            for col in range(8):
+                if self.get_color(row, col) == color:
+                    moves = self.get_valid_moves(row, col)
+                    for move in moves:
+                        all_moves.append((row, col, move[0], move[1]))
+        self.allow_recursion = True
+        return all_moves
 
-    def is_valid_move(self, from_row, from_col, to_row, to_col):
-        # Check if destination piece is of same color
-        if self.board[to_row][to_col] and \
-           self.board[from_row][from_col].split('_')[0] == self.board[to_row][to_col].split('_')[0]:
-            self.selected_piece = (to_row, to_col)
-            self.valid_moves = self.get_valid_moves(to_row, to_col)
-            self.draw_board()
+    def check_game_over(self):
+        all_my_moves = self.get_all_moves(self.current_player)
+        for move in all_my_moves.copy():
+            if not self.is_safe_move(move[0], move[1], move[2], move[3]):
+                all_my_moves.remove(move)
+        if all_my_moves != []:
             return False
-        for move in self.valid_moves:
-            if move == (to_row, to_col):
+
+        king_loc = self.get_king_location()
+        all_opp_moves = self.get_all_moves("white" if self.current_player == "black" else "black")
+        for move in all_opp_moves:
+            if move[2] == king_loc[1] and move[3] == king_loc[0]: # king is in check, mate
+                winner = "White" if self.current_player == "black" else "Black"
+                messagebox.showinfo("Game Over", f"{winner} wins!")
                 return True
-        return False
+        messagebox.showinfo("Game Over", "It's a draw!")
+        return True
 
     def get_valid_moves(self, row, col):
+        moves = []
         piece = self.board[row][col]
         if "pawn" in piece:
-            return self.get_pawn_moves(row, col)
+            moves = self.get_pawn_moves(row, col)
         elif "rook" in piece:
-            return self.get_rook_moves(row, col)
+            moves = self.get_rook_moves(row, col)
         elif "knight" in piece:
-            return self.get_knight_moves(row, col)
+            moves = self.get_knight_moves(row, col)
         elif "bishop" in piece:
-            return self.get_bishop_moves(row, col)
+            moves = self.get_bishop_moves(row, col)
         elif "queen" in piece:
-            return self.get_queen_moves(row, col)
+            moves = self.get_queen_moves(row, col)
         elif "king" in piece:
-            return self.get_king_moves(row, col)
+            moves = self.get_king_moves(row, col)
+
+        # avoid moves that put the king in check
+        self.filter_check_moves(row, col, moves)
+        return moves
 
     def get_pawn_moves(self, row, col):
         moves = []
@@ -176,20 +227,24 @@ class ChessGame:
                     moves.append((row-1, col))
                     if row == 6 and not self.board[row-2][col]:
                         moves.append((row-2, col))
-                if col > 0 and self.board[row-1][col-1] and self.get_color(row - 1, col - 1) == "black":
-                    moves.append((row-1, col-1))
-                if col < 7 and self.board[row-1][col+1] and self.get_color(row - 1, col + 1) == "black":
-                    moves.append((row-1, col+1))
+                if col > 0:
+                    if self.board[row-1][col-1] and self.get_color(row - 1, col - 1) == "black":
+                        moves.append((row-1, col-1))
+                if col < 7:
+                    if self.board[row-1][col+1] and self.get_color(row - 1, col + 1) == "black":
+                        moves.append((row-1, col+1))
         else: #black piece
             if row < 7:
                 if not self.board[row+1][col]:
                     moves.append((row+1, col))
                     if row == 1 and not self.board[row+2][col]:
                         moves.append((row+2, col))
-                if col > 0 and self.board[row+1][col-1] and self.get_color(row+1, col-1) == "white":
-                    moves.append((row+1, col-1))
-                if col < 7 and self.board[row+1][col+1] and self.get_color(row+1, col+1) == "white":
-                    moves.append((row+1, col+1))
+                if col > 0:
+                    if self.board[row+1][col-1] and self.get_color(row+1, col-1) == "white":
+                        moves.append((row+1, col-1))
+                if col < 7:
+                    if self.board[row+1][col+1] and self.get_color(row+1, col+1) == "white":
+                        moves.append((row+1, col+1))
         return moves
 
     def get_rook_moves(self, row, col):
@@ -224,23 +279,121 @@ class ChessGame:
                 break
         return moves
 
+    def get_knight_moves(self, row, col):
+        moves = []
+        for i, j in [(2, 1), (2, -1), (-2, 1), (-2, -1),
+                     (1, 2), (1, -2), (-1, 2), (-1, -2)]:
+            if 0 <= row + i < 8 and 0 <= col + j < 8:
+                if not self.board[row+i][col+j] or self.get_color(row, col) != self.get_color(row+i, col+j):
+                    moves.append((row+i, col+j))
+        return moves
+
+    def get_bishop_moves(self, row, col):
+        moves = []
+        for i in range(1, min(row, col)+1):
+            if not self.board[row-i][col-i]:
+                moves.append((row-i, col-i))
+            else:
+                if self.get_color(row, col) != self.get_color(row-i, col-i):
+                    moves.append((row-i, col-i))
+                break
+        for i in range(1, min(row, 7-col)+1):
+            if not self.board[row-i][col+i]:
+                moves.append((row-i, col+i))
+            else:
+                if self.get_color(row, col) != self.get_color(row-i, col+i):
+                    moves.append((row-i, col+i))
+                break
+        for i in range(1, min(7-row, col)+1):
+            if not self.board[row+i][col-i]:
+                moves.append((row+i, col-i))
+            else:
+                if self.get_color(row, col) != self.get_color(row+i, col-i):
+                    moves.append((row+i, col-i))
+                break
+        for i in range(1, min(7-row, 7-col)+1):
+            if not self.board[row+i][col+i]:
+                moves.append((row+i, col+i))
+            else:
+                if self.get_color(row, col) != self.get_color(row+i, col+i):
+                    moves.append((row+i, col+i))
+                break
+        return moves
+
+    def get_queen_moves(self, row, col):
+        moves = []
+        moves.extend(self.get_rook_moves(row, col))
+        moves.extend(self.get_bishop_moves(row, col))
+        return moves
+
+    def get_king_moves(self, row, col):
+        moves = []
+        for i in range(-1, 2):
+            for j in range(-1, 2):
+                if 0 <= row + i < 8 and 0 <= col + j < 8:
+                    if not self.board[row+i][col+j] or self.get_color(row, col) != self.get_color(row+i, col+j):
+                        moves.append((row+i, col+j))
+
+        # Castling white
+        if self.get_color(row, col) == "white" and not self.white_king_moved:
+            if not self.white_right_rook_moved and not self.board[7][1] and not self.board[7][2] and not self.board[7][3] and \
+               self.board[7][0] == "white_rook":
+                moves.append((7, 2))
+            if not self.white_right_rook_moved and not self.board[7][5] and not self.board[7][6] and \
+               self.board[7][7] == "white_rook":
+                moves.append((7, 6))
+
+        # Castling black
+        if self.get_color(row, col) == "black" and not self.black_king_moved:
+            if not self.black_right_rook_moved and not self.board[0][1] and not self.board[0][2] and not self.board[0][3] and \
+               self.board[0][0] == "black_rook":
+                moves.append((0, 2))
+            if not self.black_right_rook_moved and not self.board[0][5] and not self.board[0][6] and \
+               self.board[0][7] == "black_rook":
+                moves.append((0, 6))
+        return moves
+
+    def filter_check_moves(self, row, col, moves):
+        moves_iter = moves.copy()  # avoid modifying the list while iterating
+        for move in moves_iter:
+            if not self.is_safe_move(row, col, move[0], move[1]):
+                moves.remove(move)
+
+
+    def is_safe_move(self, from_row, from_col, to_row, to_col):
+        piece = self.board[from_row][from_col]
+        old_piece = self.board[to_row][to_col]
+        self.board[to_row][to_col] = piece
+        self.board[from_row][from_col] = None
+
+        king_col, king_row = self.get_king_location()
+
+        opp_moves = self.get_all_moves("white" if self.current_player == "black" else "black")
+        for opp_move in opp_moves:
+            if opp_move[2] == king_row and opp_move[3] == king_col:
+                self.board[from_row][from_col] = piece
+                self.board[to_row][to_col] = old_piece
+                return False # not a safe move, king is in check
+
+        self.board[from_row][from_col] = piece
+        self.board[to_row][to_col] = old_piece
+        return True
+
+    def get_king_location(self):
+        king_row = -1
+        king_col = -1
+        for i in range(8):
+            for j in range(8):
+                if self.board[i][j] == f"{self.current_player}_king":
+                    king_row = i
+                    king_col = j
+                    break
+        return king_col, king_row
+
     def get_color(self, row, col):
         if not self.board[row][col]:
             return None
         return self.board[row][col].split('_')[0]
-
-    def get_knight_moves(self, row, col):
-        return []
-
-    def get_bishop_moves(self, row, col):
-        return []
-
-    def get_queen_moves(self, row, col):
-        return []
-
-    def get_king_moves(self, row, col):
-        return []
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in ["computer", "opponent"]:
