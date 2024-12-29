@@ -1,5 +1,7 @@
 import tkinter as tk
-from tkinter import messagebox, PhotoImage
+from tkinter import messagebox, simpledialog
+#from tktooltip import ToolTip
+
 import random
 import sys
 from PIL import Image, ImageTk
@@ -22,15 +24,74 @@ image_paths = {
     "white_pawn": "./Images/white_pawn.png"
 }
 
+class Promoter(tk.simpledialog.Dialog):
+    def __init__(self, parent, color):
+        self.color = color
+        self.promoted = "queen" # by default
+        super().__init__(parent, "Promote Pawn")
+
+    def body(self, frame):
+        # print(type(frame)) # tkinter.Frame
+        self.label = tk.Label(frame, text="Select a piece to promote the pawn to:")
+        self.label.pack()
+        return frame
+
+    def buttonbox(self):
+        self.queen = tk.Button(self,
+                               text="Queen",
+                               command=self.promote_to_queen
+                               # image = PhotoImage(file=image_paths.get(f"{self.color}_queen")),
+                               # image = PhotoImage(Image.open(image_paths.get(f"{self.color}_queen")).resize((tile_size, tile_size), Image.Resampling.BILINEAR)),
+                               # image = Image.open(image_paths.get(f"{self.color}_queen")).resize((tile_size, tile_size), Image.Resampling.BILINEAR),
+                               )
+        self.queen.pack()
+        self.rook = tk.Button(self,
+                              text="Rook",
+                              command=self.promote_to_rook
+                              # image = PhotoImage(Image.open(image_paths.get(f"{self.color}_rook")).resize((tile_size, tile_size), Image.Resampling.BILINEAR)),
+                              )
+        self.rook.pack()
+        self.rook.pack()
+        self.bishop = tk.Button(self,
+                                text="Bishop",
+                                command=self.promote_to_bishop
+                                # image = PhotoImage(Image.open(image_paths.get(f"{self.color}_bishop")).resize((tile_size, tile_size), Image.Resampling.BILINEAR)),
+                                )
+        self.bishop.pack()
+        self.knight = tk.Button(self,
+                                text="Knight",
+                                command=self.promote_to_knight
+                                # image = PhotoImage(Image.open(image_paths.get(f"{self.color}_knight")).resize((tile_size, tile_size), Image.Resampling.BILINEAR)),
+                                )
+        self.knight.pack()
+
+    def promote_to_queen(self):
+        self.promoted = "queen"
+        self.ok()
+    def promote_to_rook(self):
+        self.promoted = "rook"
+        self.ok()
+    def promote_to_bishop(self):
+        self.promoted = "bishop"
+        self.ok()
+    def promote_to_knight(self):
+        self.promoted = "knight"
+        self.ok()
+    # def cancel(self, event = None):
+    #     self.promoted = "queen"
+    #     super().cancel()
+
+
 class ChessGame:
     def __init__(self, root, opponent_type):
         self.root = root
         self.black_player = opponent_type
+        self.images = {key: ImageTk.PhotoImage(Image.open(path).resize((tile_size, tile_size), Image.Resampling.BILINEAR))
+                  for key, path in image_paths.items()}
         self.board = self.initialize_board()
         self.current_player = "white"
         self.selected_piece = None
         self.valid_moves = []
-        self.images = {key: ImageTk.PhotoImage(Image.open(path).resize((tile_size, tile_size), Image.Resampling.BILINEAR)) for key, path in image_paths.items()}
 
         self.white_king_moved = False
         self.white_right_rook_moved = False
@@ -100,6 +161,7 @@ class ChessGame:
             self.canvas.create_text(border_width // 2, border_width + tile_size // 2 + i * tile_size, text=8-i)
             self.canvas.create_text(border_width + tile_size // 2 + i * tile_size, tile_size * 8 + 3 * border_width // 2, text=chr(ord('A')+i))
             self.canvas.create_text(tile_size * 8 + 3 * border_width // 2, border_width + tile_size // 2 + i * tile_size, text=8-i)
+
     def on_click(self, event):
         if self.current_player == "black" and self.black_player == "computer":
             return
@@ -158,6 +220,10 @@ class ChessGame:
                 self.black_left_rook_moved = True
             elif from_col == 7:
                 self.black_right_rook_moved = True
+        elif self.board[from_row][from_col] == "white_pawn" and to_row == 0:
+            self.pawn_promotion(from_row, from_col)
+        elif self.board[from_row][from_col] == "black_pawn" and to_row == 7:
+            self.pawn_promotion(from_row, from_col)
 
         self.board[to_row][to_col] = self.board[from_row][from_col]
         self.board[from_row][from_col] = None
@@ -195,13 +261,19 @@ class ChessGame:
         for move in all_my_moves.copy():
             if not self.is_safe_move(move[0], move[1], move[2], move[3]):
                 all_my_moves.remove(move)
+        king_loc = self.get_king_location()
+
         if all_my_moves != []:
+            all_opp_moves = self.get_all_moves("white" if self.current_player == "black" else "black")
+            for move in all_opp_moves:
+                if move[2] == king_loc[1] and move[3] == king_loc[0]:  # king is in check
+                    self.display_check_tooltip()
+                    return False
             return False
 
-        king_loc = self.get_king_location()
         all_opp_moves = self.get_all_moves("white" if self.current_player == "black" else "black")
         for move in all_opp_moves:
-            if move[2] == king_loc[1] and move[3] == king_loc[0]: # king is in check, mate
+            if move[2] == king_loc[1] and move[3] == king_loc[0]: # king is in checkmate
                 winner = "White" if self.current_player == "black" else "Black"
                 messagebox.showinfo("Game Over", f"{winner} wins!")
                 return True
@@ -403,6 +475,25 @@ class ChessGame:
         if not self.board[row][col]:
             return None
         return self.board[row][col].split('_')[0]
+
+    def pawn_promotion(self, row, col):
+        if self.current_player == "black" and self.black_player == "computer":
+            self.board[row][col] = f"black_{random.choice(['queen', 'rook', 'bishop', 'knight'])}"
+            return
+        promo_window = Promoter(self.root, "white" if self.current_player == "white" else "black")
+        self.board[row][col] = f"{self.current_player}_{promo_window.promoted}"
+
+    def display_check_tooltip(self):
+        x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
+        tooltip = tk.Toplevel(self.root)
+        tooltip.title("Check")
+        tooltip.overrideredirect(True)
+        tooltip.geometry(f"+{x + 20}+{y + 20}")
+        label = tk.Label(tooltip, text="King is in check!", bg="yellow", fg="red", padx=10, pady=5,
+                                  highlightbackground="black", borderwidth=1, relief="solid")
+        label.pack()
+        tooltip.after(2000, tooltip.destroy)
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in ["computer", "opponent"]:
